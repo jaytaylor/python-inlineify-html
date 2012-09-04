@@ -7,11 +7,20 @@ class WgetError(Exception):
     pass
 
 
+_memory_cache = {}
+
+
 def wget(url, referer='', num_tries=1):
     """
     @param referer Defaults to ''.  If you pass None, it will be the same as
         the target URL.
     """
+    global _memory_cache
+
+    if url in _memory_cache:
+        return _memory_cache[url]
+
+    #print 'getting %s' % (str(url),)
     hash = hashlib.md5(url).hexdigest()
     #try:
     #    with open('cache/%s' % hash, 'r') as f:
@@ -29,7 +38,10 @@ def wget(url, referer='', num_tries=1):
         data = opener.open(url).read()
     #    with open('cache/%s' % hash, 'w') as f:
     #        f.write(data)
+        #print 'data=%s' % (str(data),)
+        _memory_cache[url] = data
         return data
+
     #except IOError:
     #    raise WgetError('failed to cache url: %s, check cache dir permissions' % url)
     except urllib2.URLError, e:

@@ -36,15 +36,21 @@ def include_bare_minimum_css(domain, html, omit_bad_css=True):
     """
     d = pq(html)
     links_and_styles = d('link,style')
+    favicon = None
     stylesheets = []
     for link_or_style_ele in links_and_styles:
         if link_or_style_ele.tag == 'link':
-            if link_or_style_ele.attrib['href'][0] == '/':
+            if 'rel' in link_or_style_ele.attrib and link_or_style_ele.attrib['rel'] == 'shortcut icon':
+                favicon = link_or_style_ele.attrib['href']
+                continue
+            elif link_or_style_ele.attrib['href'][0] == '/':
                 link_or_style_ele.attrib['href'] = '%s%s' % (domain, link_or_style_ele.attrib['href'])
             stylesheets.append(wget(link_or_style_ele.attrib['href']))
         elif link_or_style_ele.tag == 'style':
             stylesheets.append(str(link_or_style_ele))
+
     out = ''
+
     for stylesheet in stylesheets:
         for stmt in stylesheet.split('}'):
             stmt = stmt.replace('\n', ' ').strip(' ') + '}'
@@ -68,7 +74,7 @@ def include_bare_minimum_css(domain, html, omit_bad_css=True):
                             #pass
                     except Exception, e:#lxml.cssselect.ExpressionError:
                         # PQ can't handle it; it is likely bad CSS so omit it
-                        # unless omit_bad_css has been requested.
+                        # unless omit_bad_css suppression has been requested.
                         if omit_bad_css:
                             include_current = True
                     if include_current:
@@ -79,8 +85,18 @@ def include_bare_minimum_css(domain, html, omit_bad_css=True):
                 if len(include_specifiers):
                     # Then this rule is used, so include it.
                     out += '%s %s\n' % (include_specifiers, rule)
+
     d('link,style').replaceWith('')
     d('head').append('<style type="text/css">%s</style>' % out)
+
+    if favicon is not None:
+        try:
+            favicon_bin = wget(favicon)
+            favicon_b64 = base64.b64encode(favicon_bin)
+            d('head').append('<link id="favicon" rel="shortcut icon" type="image/png" href="data:image/png;base64,%s">' % favicon_b64)
+        except Exception, e:
+            #print 'error: favicon integration failed'
+            pass
     return str(d)
 
 css_url_re = re.compile('''(?P<wholething>url\s*\(\s*['"]?(?P<url>[^\)'"]*)['"]?\s*\))''', re.I | re.M)
