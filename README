@@ -1,9 +1,0 @@
-@author Jay Taylor <outtatime@gmail.com>
-
-@date 2011-01-10
-
-@description Automatically inlines all images and includes and optimizes CSS
-resources into a single html file to the maximum extend possible.
-
-@todo Include JS from the same or all domains (make it an option).
-
