@@ -125,9 +125,10 @@ if __name__ == '__main__':
     parser.add_option("-d", "--domain", dest="domain", default=None,
         help="Domain name to use to download resource files from for relative urls in the document.", metavar="DOMAIN")
     parser.add_option("-i", "--input", dest="input", default=None,
-        help="HTML document to generate an inline version of.  If omitted, stdin will be used.", metavar="INPUT")
-    parser.add_option("-s", "--strict-css", dest="strict_css", default=None,
-        help="Should we choke on .", metavar="STRICT_CSS")
+        help="Path to HTML document to generate an inline version of.  If omitted, stdin will be used.", metavar="INPUT")
+    # Not yet implemented.
+    #parser.add_option("-s", "--strict-css", dest="strict_css", default=None,
+    #    help="Should we choke on .", metavar="STRICT_CSS")
     (options, args) = parser.parse_args()
     parser.check_required('-d')
     if options.domain[0:7].lower() != 'http://' and options.domain[0:8].lower() != 'https://':
