@@ -14,16 +14,15 @@ import lxml
 from pyquery import PyQuery as pq
 from wget import *
 
-class OptionParser (optparse.OptionParser):
-    def check_required (self, opt):
+class OptionParser(optparse.OptionParser):
+    def check_required(self, opt):
       option = self.get_option(opt)
-      # Assumes the option's 'default' is set to None!
+      # Assumes the options 'default' is set to None!
       if getattr(self.values, option.dest) is None:
-          self.error("%s parameter is required.  See --help for more information." % option)
+          self.error('%s parameter is required.  See --help for more information.' % option)
 
-
-css_rule_re = re.compile('''^(?P<specifiers>[^{]+)(?P<rule>.*)''')
-css_spec_cleaning_re = re.compile(''':(link|hover|active|visited|focus|before|after)''', re.I)
+css_rule_re = re.compile(r'^(?P<specifiers>[^{]+)(?P<rule>.*)')
+css_spec_cleaning_re = re.compile(r':(link|hover|active|visited|focus|before|after)', re.I)
 
 def include_bare_minimum_css(domain, html, omit_bad_css=True):
     """
@@ -99,8 +98,8 @@ def include_bare_minimum_css(domain, html, omit_bad_css=True):
             pass
     return str(d)
 
-css_url_re = re.compile('''(?P<wholething>url\s*\(\s*['"]?(?P<url>[^\)'"]*)['"]?\s*\))''', re.I | re.M)
-img_src_re = re.compile('''(?P<wholething><\s*img [^>]*src=['"](?P<url>[^'"]*)['"])''', re.I | re.M)
+css_url_re = re.compile(r'''(?P<wholething>url\s*\(\s*['"]?(?P<url>[^\)'"]*)['"]?\s*\))''', re.I | re.M)
+img_src_re = re.compile(r'''(?P<wholething><\s*img [^>]*src=['"](?P<url>[^'"]*)['"])''', re.I | re.M)
 
 def inline_images(domain, html):
     for m in css_url_re.finditer(html):
@@ -113,29 +112,25 @@ def inline_images(domain, html):
     for m in img_src_re.finditer(html):
         url = m.group('url')
         if url[0] == '/':
-            url = '%s%s' % (domain, url)
+            url = '%s%s' % r(domain, url)
         data = wget(url)
         b64_data = base64.b64encode(data)
         html = html.replace(m.group('wholething'), '<img src="data:image/%s;base64,%s"' % (url[-3:], b64_data), 1)
     return html
 
-
 if __name__ == '__main__':
     parser = OptionParser()
-    parser.add_option("-d", "--domain", dest="domain", default=None,
-        help="Domain name to use to download resource files from for relative urls in the document.", metavar="DOMAIN")
-    parser.add_option("-i", "--input", dest="input", default=None,
-        help="Path to HTML document to generate an inline version of.  If omitted, stdin will be used.", metavar="INPUT")
+    parser.add_option('-d', '--domain', dest='domain', default=None, help='Domain name to use to download resource files from for relative urls in the document.', metavar='DOMAIN')
+    parser.add_option('-i', '--input', dest='input', default=None, help='Path to HTML document to generate an inline version of.  If omitted, stdin will be used.', metavar='INPUT')
     # Not yet implemented.
-    #parser.add_option("-s", "--strict-css", dest="strict_css", default=None,
-    #    help="Should we choke on .", metavar="STRICT_CSS")
+    #parser.add_option('-s', '--strict-css', dest='strict_css', default=None, help='Should we choke on .', metavar='STRICT_CSS')
     (options, args) = parser.parse_args()
     parser.check_required('-d')
     if options.domain[0:7].lower() != 'http://' and options.domain[0:8].lower() != 'https://':
         options.domain = 'http://%s' % options.domain
 
     if options.input == None:
-        # Then we should read from stdin.
+        # Read from stdin.
         from sys import stdin
         html = stdin.readlines()
     else:
