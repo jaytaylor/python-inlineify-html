@@ -1,2 +1,21 @@
+##
+# Vim swap/working files.
+*.sw[opa]
+
+##
+# Mac OS-X miscellany.
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+##
+# Windows image file caches.
+Thumbs.db
+ehthumbs.db
+
+##
+# Python-specific dynamic intermediates.
 *.py[co]
 /venv/
+
