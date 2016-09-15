@@ -1,18 +1,20 @@
-import urllib2
+# -*- coding: utf-8 -*-
+
+import gzip
 import hashlib
+import StringIO
+import urllib2
 
 USER_AGENT = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.10) Gecko/2009042316 Firefox/3.0.10)'
 
 class WgetError(Exception):
     pass
 
-
 _memory_cache = {}
-
 
 def wget(url, referer='', num_tries=1):
     """
-    @param referer Defaults to ''.  If you pass None, it will be the same as
+    @param referer Defaults to ''.  If None is passed, it will be the same as
         the target URL.
     """
     global _memory_cache
@@ -21,7 +23,7 @@ def wget(url, referer='', num_tries=1):
         return _memory_cache[url]
 
     #print 'getting %s' % (str(url),)
-    hash = hashlib.md5(url).hexdigest()
+    hash = hashlib.sha256(url).hexdigest()
     #try:
     #    with open('cache/%s' % hash, 'r') as f:
     #        return f.read()
@@ -33,9 +35,16 @@ def wget(url, referer='', num_tries=1):
     opener.addheaders = [
         ('User-agent', USER_AGENT),
         ('Referer', referer),
+        ('Accept-encoding', 'gzip'),
     ]
     try:
-        data = opener.open(url).read()
+        response = opener.open(url)
+        if response.info().get('Content-Encoding') == 'gzip':
+            buf = StringIO.StringIO(response.read())
+            f = gzip.GzipFile(fileobj=buf)
+            data = f.read()
+        else:
+            data = response.read()
     #    with open('cache/%s' % hash, 'w') as f:
     #        f.write(data)
         #print 'data=%s' % (str(data),)
