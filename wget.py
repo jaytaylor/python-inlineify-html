@@ -2,10 +2,11 @@
 
 import gzip
 import hashlib
+import os
 import StringIO
 import urllib2
 
-USER_AGENT = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.10) Gecko/2009042316 Firefox/3.0.10)'
+USER_AGENT = os.environ.get('USER_AGENT', 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.10) Gecko/2009042316 Firefox/3.0.10)')
 
 class WgetError(Exception):
     pass
