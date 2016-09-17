@@ -1,0 +1,10 @@
+body {
+	background-color: #000;
+	color: #ff0000;
+	border: 30px solid green;
+}
+span {
+    background-color: teal;
+    color: #0000ff;
+    border: 15px dashed yellow;
+}
