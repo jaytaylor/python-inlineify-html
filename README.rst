@@ -14,3 +14,9 @@ resources into a single html file to the maximum extent possible.
 
 Originally created on 2011-01-10
 
+Running tests
+-------------
+
+    pip install nose
+    nosetests -v
+

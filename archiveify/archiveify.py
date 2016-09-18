@@ -63,7 +63,6 @@ class WebPageArchiver(object):
                 setattr(self.options, 'base_url', re.sub(r'^([^/]*//[^/]+).*$', r'\1', self.options.src_url))
                 if self.options.src_url[0:7].lower() != 'http://' and self.options.src_url[0:8].lower() != 'https://':
                     self.options.src_url = 'http://%s' % self.options.src_url
-
             if self.options.download is True:
                 response = httputils.get(self.options.src_url)
                 self._html = response.content.decode('utf-8')
@@ -73,10 +72,17 @@ class WebPageArchiver(object):
             else:
                 with open(self.options.input, 'r') as fh:
                     self._html = fh.read()
-
-            #html = reduce_and_inline_css_js(self.options, html)
-            #html = inline_images(self.options, html)
         return self._html
+
+    def __str__(self):
+        html = self.d().__html__().encode('utf-8')
+        return html
+
+    def apply_all(self):
+        self.inline_favicon()
+        self.inline_and_min_css()
+        self.inline_js()
+        return str(self)
 
     def d(self):
         if self._d is None:
@@ -149,9 +155,20 @@ class WebPageArchiver(object):
                 else:
                     self.d()(link_ele).replaceWith(u'')
 
-    def __str__(self):
-        html = self.d().__html__().encode('utf-8')
-        return html
+    def inline_js(self):
+        for script in self.d()('script'):
+            if 'src' in script.attrib:
+                if script.attrib['src'] in FORBIDDEN_RESOURCES:
+                    self.d()(script).remove()
+                else:
+                    script_src = self._gen_rel_url(script.attrib['src'])
+                    response = httputils.get(script_src)
+                    if response.status_code / 100 != 2:
+                        raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, script_src))
+                    else:
+                        self.d()(script).replaceWith('<script>\n/* src: %s */\n%s;</script>' % (script_src, response.content.decode('utf-8').strip()))
+            elif '"UA-' in script.text or "'UA-" in script.text:
+                self.d()(script).remove()
 
 def reduce_and_inline_css_js(options, html, omit_bad_css=True):
     """

@@ -78,6 +78,13 @@ class TestInlineifier(unittest.TestCase):
         self.assertTrue('background-color: #000' in str(wpa), '<body> style "background-color: #000" not found in HTML output:\n%s' % wpa)
         self.assertFalse('background-color: teal' in str(wpa), '<span> style "background-color: teal" found in HTML output:\n%s' % wpa)
 
+    def test_js_inlining(self):
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        base_url = http_serve_path('%s/test-data/basic-site.tld/' % base_path)
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True))
+        wpa.inline_js()
+        self.assertTrue('console.log("hello js world");' in str(wpa), 'JS content not found in HTML output:\n%s' % wpa)
+
 #        with open('test-data/smithsonian-clock.html', 'rb') as fh:
 #        args = ('this is a test', '403')
 #        url = http_serve_once()
