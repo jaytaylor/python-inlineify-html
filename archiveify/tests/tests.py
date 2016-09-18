@@ -57,33 +57,58 @@ class TestHTTPServers(unittest.TestCase):
         self.assertEqual(expected_body, response.content.decode('utf-8'))
 
 class TestInlineifier(unittest.TestCase):
-    def test_basic_site_index(self):
+    @staticmethod
+    def _serve_basic_site():
         base_path = os.path.dirname(os.path.abspath(__file__))
         base_url = http_serve_path('%s/test-data/basic-site.tld/' % base_path)
+        return base_url
+
+    def test_basic_site_index(self):
+        base_url = self._serve_basic_site()
         response = httputils.get('%s%s' % (base_url, 'index.html'))
         self.assertEqual(200, response.status_code)
 
+    def test_basic_site_404(self):
+        base_url = self._serve_basic_site()
+        response = httputils.get('%s%s' % (base_url, 'non-existent.html'))
+        self.assertEqual(404, response.status_code)
+
     def test_favicon_inlining(self):
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        base_url = http_serve_path('%s/test-data/basic-site.tld/' % base_path)
+        base_url = self._serve_basic_site()
         wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True))
         wpa.inline_favicon()
         self.assertTrue(';base64,' in str(wpa), 'string ";base64," not found in HTML output:\n%s' % wpa)
 
     def test_css_inlining_and_minimization(self):
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        base_url = http_serve_path('%s/test-data/basic-site.tld/' % base_path)
-        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True))
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_css=True))
         wpa.inline_and_min_css()
         self.assertTrue('background-color: #000' in str(wpa), '<body> style "background-color: #000" not found in HTML output:\n%s' % wpa)
         self.assertFalse('background-color: teal' in str(wpa), '<span> style "background-color: teal" found in HTML output:\n%s' % wpa)
 
+    def test_css_inlining_and_minimization_disabled(self):
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_css=False))
+        wpa.inline_and_min_css()
+        self.assertFalse('background-color: #000' in str(wpa), '<body> style "background-color: #000" not found in HTML output:\n%s' % wpa)
+        self.assertFalse('background-color: teal' in str(wpa), '<span> style "background-color: teal" found in HTML output:\n%s' % wpa)
+
     def test_js_inlining(self):
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        base_url = http_serve_path('%s/test-data/basic-site.tld/' % base_path)
-        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True))
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_js=True))
         wpa.inline_js()
         self.assertTrue('console.log("hello js world");' in str(wpa), 'JS content not found in HTML output:\n%s' % wpa)
+
+    def test_js_inlining_disabled(self):
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_js=False))
+        wpa.inline_js()
+        self.assertFalse('console.log("hello js world");' in str(wpa), 'JS content not found in HTML output:\n%s' % wpa)
+
+    def test_apply(self):
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_css=True, inline_js=True))
+        wpa.apply()
 
 #        with open('test-data/smithsonian-clock.html', 'rb') as fh:
 #        args = ('this is a test', '403')

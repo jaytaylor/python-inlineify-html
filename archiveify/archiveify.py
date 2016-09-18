@@ -17,7 +17,6 @@ import optparse
 from pyquery import PyQuery as pq
 import re
 import sys
-import wget
 
 import inlinestyler_monkey_patch
 import httputils
@@ -35,6 +34,9 @@ FORBIDDEN_RESOURCES = [
 
 css_rule_re = re.compile(r'^(?P<specifiers>[^{]+)(?P<rule>.*)')
 css_spec_cleaning_re = re.compile(r':(link|hover|active|visited|focus|before|after)', re.I)
+
+css_url_re = re.compile(r'''(?P<wholething>url\s*\(\s*['"]?(?P<url>[^\)'"]*)['"]?\s*\))''', re.I | re.M)
+img_src_re = re.compile(r'''(?P<wholething><\s*img [^>]*src=['"](?P<url>[^'"]*)['"])''', re.I | re.M)
 
 class Options(object):
     def __init__(self, input=None, src_url=None, download=False, inline_css=False, inline_js=False):
@@ -78,10 +80,11 @@ class WebPageArchiver(object):
         html = self.d().__html__().encode('utf-8')
         return html
 
-    def apply_all(self):
+    def apply(self):
         self.inline_favicon()
         self.inline_and_min_css()
         self.inline_js()
+        self.inline_images()
         return str(self)
 
     def d(self):
@@ -107,6 +110,9 @@ class WebPageArchiver(object):
                 break
 
     def inline_and_min_css(self, force_include_bad_css=True):
+        if not self.options.inline_css:
+            return
+
         stylesheet_links = self.d()('link[rel="stylesheet"]')
         for link_ele in stylesheet_links:
             if 'href' in link_ele.attrib:
@@ -156,6 +162,9 @@ class WebPageArchiver(object):
                     self.d()(link_ele).replaceWith(u'')
 
     def inline_js(self):
+        if not self.options.inline_js:
+            return
+
         for script in self.d()('script'):
             if 'src' in script.attrib:
                 if script.attrib['src'] in FORBIDDEN_RESOURCES:
@@ -170,155 +179,24 @@ class WebPageArchiver(object):
             elif '"UA-' in script.text or "'UA-" in script.text:
                 self.d()(script).remove()
 
-def reduce_and_inline_css_js(options, html, omit_bad_css=True):
-    """
-    @param options optparse Options object.
-
-    @param html string.  HTML document string.
-
-    @param omit_bad_css boolean.  Defaults to True.  When True, erroneous CSS
-    will simply be omitted.  When False, any questionable CSS will be included.
-    """
-    def inject_css(d):
-        favicon = d('link[rel="shortcut icon"],link[rel*="icon"]')
-        links_and_styles = d('link[rel="stylesheet"],style')
-        stylesheets = []
-        for link_or_style_ele in links_and_styles:
-            if link_or_style_ele.tag == 'link':
-                if 'rel' in link_or_style_ele.attrib and link_or_style_ele.attrib['rel'] == 'shortcut icon':
-                    favicon = link_or_style_ele.attrib['href']
-                    continue
-                resolved_url = gen_rel_url(options, link_or_style_ele.attrib['href'])
-                response = httputils.get(resolved_url)
-                stylesheets.append(response.content.decode('utf-8'))
-            elif link_or_style_ele.tag == 'style':
-                stylesheets.append(str(link_or_style_ele))
-
-        out = ''
-
-        #print html
-        for stylesheet in stylesheets:
-            for stmt in stylesheet.split('}'):
-                stmt = stmt.replace('\n', ' ').strip(' ') + '}'
-                match = css_rule_re.match(stmt)
-                if match:
-                    specifiers = match.group('specifiers')
-                    rule = match.group('rule')
-                    include_specifiers = ''
-                    #print specifiers, '///'
-                    for specifier in specifiers.split(','):
-                        clean_specifier = re.sub(css_spec_cleaning_re, '', specifier)
-                        # Interesting idea, but maybe not the best. -.v
-                        #specifier = specifier.replace(' ', '>')
-                        include_current = False
-                        try:
-                            matched_elements = d(clean_specifier)
-                            if len(matched_elements):
-                                # Then the element should be included.
-                                include_current = True
-                            #else:
-                                # Otherwise it can be fairly safely omitted.
-                                #pass
-                        except Exception, e:#lxml.cssselect.ExpressionError:
-                            # PQ can't handle it; it is likely bad CSS so omit it
-                            # unless omit_bad_css suppression has been requested.
-                            if omit_bad_css:
-                                include_current = True
-                        if include_current:
-                            if len(include_specifiers):
-                                include_specifiers += ',' + specifier
-                            else:
-                                include_specifiers = specifier
-                    if len(include_specifiers) > 0:
-                        # Then this rule is used, so include it.
-                        out += '%s %s\n' % (include_specifiers, rule)
-
-        d('link,style').replaceWith('')
-        d('head').append('<style type="text/css">%s</style>' % out) #.encode('utf-8'))
-
-        if favicon:
-            try:
-                response = httputils.get(favicon[0].attrib['href'])
-                if response.status_code / 100 != 2:
-                    raise Exception('Got non-2xx status-code=%s for favicon from %s' % (response.status_code, favicon[0].attrib['href']))
-                favicon_bin = response.content
-                favicon_b64 = base64.b64encode(favicon_bin)
-                favicon_type = favicon[0].attrib.get('type', 'image/png')
-                d('head').append('<link id="favicon" rel="shortcut icon" type="%s" href="data:%s;base64,%s">' % (favicon_type, favicon_type, favicon_b64))
-            except Exception as e:
-                system.stderr.write('error: favicon integration failed, %s\n' % e)
-                pass
-
-    # Inline JS.
-    def inject_js(d):
-        scripts = []
-        for script in d('script'):
-            if 'src' in script.attrib:
-                if not script.attrib['src'] in FORBIDDEN_RESOURCES:
-                    script_src = gen_rel_url(options, script.attrib['src'])
-                    response = httputils.get(script_src)
-                    if response.status_code / 100 != 2:
-                        sys.stderr.write('Got non-2xx status-code=%s while fetching %s' % (response.status_code, script_src))
-                    else:
-                        scripts.append(('/* src: %s */\n %s' % (script_src, response.content.decode('utf-8'))))
+    def inline_images(self):
+        for m in css_url_re.finditer(self.html()):
+            url = self._gen_rel_url(m.group('url'))
+            response = httputils.get(url)
+            if response.status_code / 100 != 2:
+                raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
             else:
-                if not '"UA-' in script.text and not "'UA-" in script.text:
-                    scripts.append(script.text_content())
-        d('script').replaceWith('')
-        for script in scripts:
-            d('head').append('<script type="text/javascript">%s;</script>' % script)
+                b64_data = base64.b64encode(response.content)
+                self._html = self._html.replace(m.group('wholething'), 'url(data:image/%s;base64,%s)' % (url[-3:], b64_data), 1)
 
-    d = pq(html)
-    inject_css(d)
-    inject_js(d)
-    html = d('html').__html__().encode('utf-8')
-    if options.inline_css:
-        html = inlinestyler.utils.inline_css(html)
-        d = pq(html)
-        d('style').replaceWith('')
-        html = d('html').__html__().encode('utf-8')
-    return html
-
-css_url_re = re.compile(r'''(?P<wholething>url\s*\(\s*['"]?(?P<url>[^\)'"]*)['"]?\s*\))''', re.I | re.M)
-img_src_re = re.compile(r'''(?P<wholething><\s*img [^>]*src=['"](?P<url>[^'"]*)['"])''', re.I | re.M)
-
-def inline_images(options, html):
-    """
-    @param options optparse Options object.
-
-    @param html string.  HTML document string.
-    """
-    for m in css_url_re.finditer(html):
-        url = gen_rel_url(options, m.group('url'))
-        response = httputils.get(url)
-        if response.status_code / 100 != 2:
-            sys.stderr.write('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
-        else:
-            b64_data = base64.b64encode(response.content)
-            html = html.replace(m.group('wholething'), 'url(data:image/%s;base64,%s)' % (url[-3:], b64_data), 1)
-
-    for m in img_src_re.finditer(html):
-        url = gen_rel_url(options, m.group('url'))
-        response = httputils.get(url)
-        if response.status_code / 100 != 2:
-            sys.stderr.write('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
-        else:
-            b64_data = base64.b64encode(response.content)
-            html = html.replace(m.group('wholething'), '<img src="data:image/%s;base64,%s"' % (url[-3:], b64_data), 1)
-
-    return html
-
-class OptionParser(optparse.OptionParser):
-    def check_required(self, opt):
-      option = self.get_option(opt)
-      # Assumes the options 'default' is set to None.
-      if getattr(self.values, option.dest) is None:
-          self.error('%s parameter is required.  See --help for more information.' % option)
-
-def error_exit(msg):
-    #sys.stderr.write('%s\n' % msg)
-    #sys.exit(1)
-    raise Exception(msg)
+        for m in img_src_re.finditer(self.html()):
+            url = self._gen_rel_url(m.group('url'))
+            response = httputils.get(url)
+            if response.status_code / 100 != 2:
+                raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
+            else:
+                b64_data = base64.b64encode(response.content)
+                self._html = self._html.replace(m.group('wholething'), '<img src="data:image/%s;base64,%s"' % (url[-3:], b64_data), 1)
 
 def gen_rel_url(options, fragment):
     """Generate a complete URL from a fragment, even a relative (`../') one."""
@@ -326,7 +204,7 @@ def gen_rel_url(options, fragment):
         pass
     elif fragment.startswith('../'):
         if options.src_url is None:
-            error_exit('missing required -s/--src-url flag to archive this document.')
+            raise Exception('missing required -s/--src-url flag to archive this document.')
         fragment = '%s%s' % (re.sub(r'^(.*/).*$', r'\1', options.src_url), fragment)
         while '/../' in fragment:
             fragment = re.sub(r'^([^//]+//[^/]+/.*?)/?\.\./(.*)$', r'\1\2', fragment)
@@ -334,43 +212,22 @@ def gen_rel_url(options, fragment):
         fragment = 'http:%s' % fragment
     else:
         if not hasattr(options, 'base_url'):
-            error_exit('missing required -s/--src-url flag to inlineify this document.')
+            raise Exception('missing required -s/--src-url flag to inlineify this document.')
         fragment = '%s/%s' % (options.base_url, fragment.lstrip('/'))
     return fragment
 
-def archiveify(options):
-    if options.download is True and options.input is not None:
-        parser.error('invalid flags combination: -d/--download cannot be used with -i/--input specification.')
-    if options.download is True and options.src_url is None:
-        parser.error('missing flag: -d/--download requires -s/--src-url.')
-    if options.src_url is not None:
-        setattr(options, 'base_url', re.sub(r'^([^/]*//[^/]+).*$', r'\1', options.src_url)) #[0:8] + options.src_url[8:].index('/')
-        if options.src_url[0:7].lower() != 'http://' and options.src_url[0:8].lower() != 'https://':
-            options.src_url = 'http://%s' % options.src_url
-
-    if options.download is True:
-        html = wget.wget(options.src_url)
-    elif options.input == None:
-        # Read from stdin.
-        html = sys.stdin.readlines()
-    else:
-        with open(options.input, 'r') as fh:
-            html = fh.read()
-
-    html = reduce_and_inline_css_js(options, html)
-    html = inline_images(options, html)
-    return html
-
 if __name__ == '__main__':
-    parser = OptionParser()
-    error_exit = parser.error
-    parser.add_option('-c', '--inline-css', dest='inline_css', action='store_true', help='Enable CSS attribute inlining', metavar='INLINE_CSS')
+    parser = optparse.OptionParser()
+    parser.add_option('-c', '--inline-css', dest='inline_css', action='store_true', help='Enable CSS attribute inlining.', metavar='INLINE_CSS')
+    parser.add_option('-j', '--inline-js', dest='inline_js', action='store_true', help='Enable JS script content inlining.', metavar='INLINE_JS')
     parser.add_option('-d', '--download', dest='download', action='store_true', help='Download the source HTML document and use that as input.', metavar='DOWNLOAD')
     parser.add_option('-i', '--input', dest='input', default=None, help='Path to HTML document to generate an inline version of.  If omitted, stdin will be used.', metavar='INPUT')
-    parser.add_option('-s', '--src-url', dest='src_url', default=None, help='Original source URL', metavar='SRC_URL')
+    parser.add_option('-s', '--src-url', dest='src_url', default=None, help='Original source URL.', metavar='SRC_URL')
     (options, args) = parser.parse_args()
-
-    html = archiveify(options) #.encode('utf-8')
-    print(html)
-
+    try:
+        wpa = WebPageArchiver(options)
+        wpa.apply()
+        print(str(wpa))
+    except Exception as e:
+        parser.error(str(e))
 
