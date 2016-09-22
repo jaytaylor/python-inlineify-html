@@ -56,7 +56,7 @@ class TestHTTPServers(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual(expected_body, response.content.decode('utf-8'))
 
-class TestInlineifier(unittest.TestCase):
+class TestWebPageArchiver(unittest.TestCase):
     @staticmethod
     def _serve_basic_site():
         base_path = os.path.dirname(os.path.abspath(__file__))
@@ -110,15 +110,14 @@ class TestInlineifier(unittest.TestCase):
         wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_css=True, inline_js=True))
         wpa.apply()
 
-#        with open('test-data/smithsonian-clock.html', 'rb') as fh:
-#        args = ('this is a test', '403')
-#        url = http_serve_once()
-#        pass
-#        self.assertEqual(httputils.get(url)
-        #print wget.wget('http://%s:%s/' % (HTTP_SERVER_INTERFACE, port))
+    def test_htmlentities(self):
+        base_url = self._serve_basic_site()
+        wpa = WebPageArchiver(Options(src_url='%s%s' % (base_url, 'index.html'), download=True, inline_css=True, inline_js=True))
+        #wpa.apply()
+        self.assertTrue('no-break&nbsp;space' in str(wpa) or 'no-break&#160;space' in str(wpa), 'string "no-break&nbsp;space" not found in HTML output:\n%s' % wpa)
 
-        #import sys
-        #sys.stdout.write('%s\n' % str(wpa))
+    def foo(self):
+        pass
 
 if __name__ == '__main__':
     unittest.main()

@@ -11,12 +11,14 @@ resources into a single html file to the maximum extend possible.
 """
 
 import base64
+import codecs
 import inlinestyler.utils
 import lxml
 import optparse
 from pyquery import PyQuery as pq
 import re
 import sys
+import traceback
 
 import inlinestyler_monkey_patch
 import httputils
@@ -55,7 +57,19 @@ class WebPageArchiver(object):
         self._html = None
         self._d = None
 
-    def html(self):
+    def __str__(self):
+        html = self.__html__().encode('utf-8')
+        #import lxml.html
+        #html = unicode('').join([lxml.html.tostring(e, encoding='utf-8') for e in self.d()])
+        html = html.replace('\r\n', '\n')
+        return html
+
+    def __html__(self):
+        """Override PyQuery as the __html__() method uses unicode encoding which munges HTML entities."""
+        html = ''.join([lxml.html.tostring(e) for e in self.d()])
+        return html
+
+    def input_html(self):
         if self._html is None:
             if self.options.download is True and self.options.input is not None:
                 raise Exception('invalid flags combination: -d/--download cannot be used with -i/--input specification')
@@ -72,13 +86,14 @@ class WebPageArchiver(object):
                 # Read from stdin.
                 self._html = sys.stdin.readlines()
             else:
-                with open(self.options.input, 'r') as fh:
+                with codecs.open(self.options.input, 'r', encoding='utf-8') as fh:
                     self._html = fh.read()
         return self._html
 
-    def __str__(self):
-        html = self.d().__html__().encode('utf-8')
-        return html
+    def d(self):
+        if self._d is None:
+            self._d = pq(self.input_html().encode('utf-8')) #, url=self.options.src_url)
+        return self._d
 
     def apply(self):
         self.inline_favicon()
@@ -86,11 +101,6 @@ class WebPageArchiver(object):
         self.inline_js()
         self.inline_images()
         return str(self)
-
-    def d(self):
-        if self._d is None:
-            self._d = pq(self.html())
-        return self._d
 
     def _gen_rel_url(self, fragment):
         url = gen_rel_url(self.options, fragment)
@@ -176,27 +186,32 @@ class WebPageArchiver(object):
                         raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, script_src))
                     else:
                         self.d()(script).replaceWith('<script>\n/* src: %s */\n%s;</script>' % (script_src, response.content.decode('utf-8').strip()))
-            elif '"UA-' in script.text or "'UA-" in script.text:
+            elif '"UA-' in script.text or "'UA-" in script.text: # No google analytics tracking.
                 self.d()(script).remove()
 
     def inline_images(self):
-        for m in css_url_re.finditer(self.html()):
-            url = self._gen_rel_url(m.group('url'))
-            response = httputils.get(url)
-            if response.status_code / 100 != 2:
-                raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
-            else:
-                b64_data = base64.b64encode(response.content)
-                self._html = self._html.replace(m.group('wholething'), 'url(data:image/%s;base64,%s)' % (url[-3:], b64_data), 1)
+        for stylesheet in self.d()('style'):
+            stylesheet_text = stylesheet.text
+            for m in css_url_re.finditer(stylesheet_text):
+                url = self._gen_rel_url(m.group('url'))
+                response = httputils.get(url)
+                if response.status_code / 100 != 2:
+                    raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
+                else:
+                    b64_data = base64.b64encode(response.content)
+                    stylesheet_text = stylesheet_text.replace(m.group('wholething'), 'url(data:image/%s;base64,%s)' % (url[-3:], b64_data), 1)
+            self.d()(stylesheet).replaceWith('<style type="text/css">%s</style>' % stylesheet_text)
 
-        for m in img_src_re.finditer(self.html()):
-            url = self._gen_rel_url(m.group('url'))
-            response = httputils.get(url)
-            if response.status_code / 100 != 2:
-                raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
-            else:
-                b64_data = base64.b64encode(response.content)
-                self._html = self._html.replace(m.group('wholething'), '<img src="data:image/%s;base64,%s"' % (url[-3:], b64_data), 1)
+        for img in self.d()('img'):
+            if 'src' in img.attrib:
+                url = self._gen_rel_url(m.group('url'))
+                response = httputils.get(url)
+                if response.status_code / 100 != 2:
+                    raise Exception('Got non-2xx status-code=%s while fetching %s' % (response.status_code, url))
+                else:
+                    b64_data = base64.b64encode(response.content)
+                    img.attrib['src'] = 'data:image/%s;base64,%s' % (url[-3:], b64_data)
+                    self.d()(img).replaceWith(lxml.html.tostring(img))  # '<style type="text/css" jay>%s</style>' % stylesheet_text)
 
 def gen_rel_url(options, fragment):
     """Generate a complete URL from a fragment, even a relative (`../') one."""
@@ -229,5 +244,7 @@ if __name__ == '__main__':
         wpa.apply()
         print(str(wpa))
     except Exception as e:
+        tb = traceback.format_exc()
+        sys.stderr.write(tb)
         parser.error(str(e))
 

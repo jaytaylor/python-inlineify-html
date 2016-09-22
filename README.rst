@@ -20,3 +20,11 @@ Running tests
     pip install nose
     nosetests -v
 
+Requirements
+------------
+* Python 2.x
+
+Notes
+-----
+http://archive.is/ is incredible!  Most often better than this and superbly maintained for special cases!!!
+
